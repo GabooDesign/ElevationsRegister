@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Registrador de elevaciones</title>
+  <link rel="icon" href="favicon.png" type="image/svg+xml">
+  <link rel="manifest" href="manifest.json">
+<style>
+*{box-sizing:border-box}body{margin:0;background:#101114;color:#f5f5f5;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+main{max-width:720px;margin:auto;padding:18px 15px 40px}h1{font-size:26px;margin:0 0 4px}.muted{color:#a8aab0;font-size:14px}
+.card{background:#191b20;border:1px solid #292c32;border-radius:18px;padding:16px;margin-top:12px}
+.status{display:flex;align-items:center;gap:9px;color:#b5b7bc;font-size:14px}.dot{width:10px;height:10px;border-radius:50%;background:#70737a}.live{background:#55d6be}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:13px}.reading{background:#101216;border-radius:15px;text-align:center;padding:15px 8px}
+.label{font-size:12px;color:#a8aab0}.num{font-size:42px;font-weight:750;line-height:1.05;margin:7px 0}.unit{font-size:13px;color:#8f9299}
+button,select,input{font:inherit;min-height:48px;border-radius:12px}button{width:100%;border:0;padding:11px 15px;background:#2b2e35;color:white;font-weight:650;margin-top:10px}
+button.primary{background:#55d6be;color:#07110e}button.stop{background:#55282d;color:#ffe4e4}button:disabled{opacity:.4}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{margin-top:10px}.field label{display:block;color:#a8aab0;font-size:13px;margin-bottom:6px}
+input,select{width:100%;background:#101216;border:1px solid #3a3d45;color:#fff;padding:10px 12px}
+.station{font-size:24px;font-weight:750;text-align:center;margin:8px 0}.event{font-size:13px;color:#a8aab0;text-align:center;min-height:20px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}.stat{background:#101216;border-radius:12px;padding:10px}.stat span{display:block;color:#999ca3;font-size:12px}.stat b{font-size:17px}
+.note{font-size:13px;line-height:1.5;color:#a8aab0}.hidden{display:none}.footer{max-width:720px;margin:25px auto 0;padding:16px 15px 25px;text-align:center;color:#70737a;font-size:12px;border-top:1px solid #292c32;}
+</style>
+</head>
+<body>
+<main>
+<h1> Registrador de elevaciones</h1>
+<div class="muted">Captura de elevaciones y inclinación durante un recorrido.</div>
+
+<section class="card">
+<div class="status"><span id="dot" class="dot"></span><span id="status">Sensores inactivos</span></div>
+<button id="activate" class="primary">Activar sensores</button>
+<button id="calibrate">Calibrar posición actual → 0°</button>
+<div class="grid">
+<div class="reading"><div class="label">LONGITUDINAL</div><div id="pitch" class="num">0.00°</div><div class="unit">ascenso / descenso</div></div>
+<div class="reading"><div class="label">LATERAL</div><div id="roll" class="num">0.00°</div><div class="unit">inclinación transversal</div></div>
+</div>
+</section>
+
+<section class="card">
+<div class="row">
+<div class="field"><label for="interval">Intervalo de registro</label>
+<select id="interval"><option value="250">0,25 s</option><option value="500">0,5 s</option><option value="1000" selected>1 s</option><option value="2000">2 s</option><option value="5000">5 s</option><option value="10000">10 s</option></select></div>
+<div class="field"><label for="filename">Nombre del CSV</label><input id="filename" value="recorrido_tren" maxlength="80"></div>
+</div>
+<button id="start" class="primary" disabled>▶ Iniciar recorrido</button>
+<button id="stop" class="stop" disabled>■ Finalizar recorrido</button>
+<div class="stats">
+<div class="stat"><span>Registros</span><b id="count">0</b></div>
+<div class="stat"><span>Duración</span><b id="duration">00:00:00</b></div>
+<div class="stat"><span>Interestaciones</span><b id="segments">0</b></div>
+</div>
+</section>
+
+<section id="stationCard" class="card hidden">
+<div class="muted" style="text-align:center">MARCADOR DE ESTACIÓN</div>
+<div id="stationName" class="station">—</div>
+<div id="lastEvent" class="event">El registro automático continúa mientras marcas eventos.</div>
+<div class="row">
+<button id="arrive">🚉 Llegué a estación</button>
+<button id="depart">▶ Salí de estación</button>
+</div>
+</section>
+
+<section class="card">
+<div class="note"><b>Durante el recorrido:</b> tú solo debes preocuparte de que el teléfono permanezca correctamente posicionado. La captura de ángulos ocurre automáticamente. Cuando llegues o salgas de una estación, marcas el evento y continúas.</div>
+<div class="field"><label for="station">Próxima estación / estación actual</label><input id="station" placeholder="Ej. Mirador"></div>
+</section>
+
+<section class="card">
+<button id="download" class="primary" disabled>⬇ Exportar CSV</button>
+<button id="clear" disabled>🗑 Borrar recorrido</button>
+</section>
+</main>
+
+<footer class="footer">
+  <span>© 2026 GabooDesign</span>
+  <span>·</span>
+  <span>Registrador de elevaciones de recorridos</span>
+</footer>
+
+<script>
+(()=>{"use strict";
+let active=false,recording=false,timer=null,elapsedTimer=null,startedAt=0;
+let betaRaw=0,gammaRaw=0,pitch=0,roll=0,baseBeta=0,baseGamma=0;
+let records=[],events=[];
+const $=id=>document.getElementById(id);
+function status(t,live=false){$("status").textContent=t;$("dot").className="dot"+(live?" live":"")}
+function orientation(e){
+ betaRaw=Number.isFinite(e.beta)?e.beta:0;gammaRaw=Number.isFinite(e.gamma)?e.gamma:0;
+ pitch=betaRaw-baseBeta;roll=gammaRaw-baseGamma;
+ $("pitch").textContent=pitch.toFixed(2)+"°";$("roll").textContent=roll.toFixed(2)+"°";
+}
+async function activate(){
+ try{
+  if(!("DeviceOrientationEvent" in window)){status("Este navegador no ofrece orientación.");return}
+  if(typeof DeviceOrientationEvent.requestPermission==="function"){
+   const p=await DeviceOrientationEvent.requestPermission();if(p!=="granted"){status("Permiso rechazado.");return}
+  }
+  window.addEventListener("deviceorientation",orientation,true);active=true;
+  $("activate").disabled=true;$("start").disabled=false;status("Sensores activos",true);
+ }catch(e){status("No se pudieron activar los sensores.")}
+}
+function calibrate(){
+ if(!active){alert("Activa los sensores primero.");return}
+ baseBeta=betaRaw;baseGamma=gammaRaw;pitch=0;roll=0;
+ $("pitch").textContent="0.00°";$("roll").textContent="0.00°";status("Calibrado a 0°",true);
+}
+function durationText(ms){
+ const s=Math.max(0,Math.floor(ms/1000)),h=String(Math.floor(s/3600)).padStart(2,"0"),m=String(Math.floor(s%3600/60)).padStart(2,"0"),x=String(s%60).padStart(2,"0");return h+":"+m+":"+x;
+}
+function updateDuration(){
+ const ms=recording?performance.now()-startedAt:(records.length?records[records.length-1].elapsedMs:0);
+ $("duration").textContent=durationText(ms);
+}
+function render(){
+ $("count").textContent=records.length;
+ $("segments").textContent=events.filter(e=>e.type==="DEPARTURE").length;
+ $("download").disabled=!records.length;
+ $("clear").disabled=!records.length;
+}
+function start(){
+ if(!active||recording)return;
+ records=[];events=[];render();recording=true;startedAt=performance.now();
+ $("start").disabled=true;$("stop").disabled=false;$("interval").disabled=true;$("filename").disabled=true;
+ $("stationCard").classList.remove("hidden");status("RECORRIDO EN CURSO",true);
+ const ms=Math.max(250,Math.min(10000,parseInt($("interval").value,10)||1000));
+ const sample=()=>{if(!recording)return;records.push({id:records.length+1,timestampMs:Date.now(),elapsedMs:Math.round(performance.now()-startedAt),longitudinal:pitch,lateral:roll,event:"",station:""});render()};
+ sample();timer=setInterval(sample,ms);elapsedTimer=setInterval(updateDuration,100);
+}
+function mark(type){
+ if(!recording){alert("Primero inicia el recorrido.");return}
+ const name=$("station").value.trim()||"Sin nombre";
+ const elapsed=Math.round(performance.now()-startedAt);
+ const event={id:events.length+1,timestampMs:Date.now(),elapsedMs:elapsed,type,station:name};
+ events.push(event);
+ records.push({id:records.length+1,timestampMs:event.timestampMs,elapsedMs:elapsed,longitudinal:pitch,lateral:roll,event:type,station:name});
+ $("stationName").textContent=name;
+ $("lastEvent").textContent=(type==="ARRIVAL"?"Llegada registrada: ":"Salida registrada: ")+name;
+ render();
+}
+function stop(){
+ if(!recording)return;
+ recording=false;clearInterval(timer);clearInterval(elapsedTimer);timer=null;elapsedTimer=null;
+ $("start").disabled=false;$("stop").disabled=true;$("interval").disabled=false;$("filename").disabled=false;
+ $("recording")?.textContent;
+ status("Recorrido detenido",true);updateDuration();
+}
+function exportCSV(){
+ if(!records.length)return;
+ let name=$("filename").value.trim().replace(/[\\/:*?"<>|]/g,"_")||"recorrido_tren";if(!/\.csv$/i.test(name))name+=".csv";
+ const header=["id","timestamp_ms","tiempo_desde_inicio_ms","angulo_longitudinal_deg","angulo_lateral_deg","evento","estacion"];
+ const lines=[header.join(",")];
+ records.forEach(r=>lines.push([r.id,r.timestampMs,r.elapsedMs,r.longitudinal.toFixed(4),r.lateral.toFixed(4),r.event,r.station].map(v=>`"${String(v??"").replaceAll('"','""')}"`).join(",")));
+ const blob=new Blob(["\uFEFF"+lines.join("\n")],{type:"text/csv;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");
+ a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function clearAll(){
+ if(records.length&&confirm("¿Borrar todo el recorrido?")){records=[];events=[];$("duration").textContent="00:00:00";$("stationName").textContent="—";$("lastEvent").textContent="El registro automático continúa mientras marcas eventos.";render()}
+}
+$("activate").addEventListener("click",activate);$("calibrate").addEventListener("click",calibrate);
+$("start").addEventListener("click",start);$("stop").addEventListener("click",stop);
+$("arrive").addEventListener("click",()=>mark("ARRIVAL"));$("depart").addEventListener("click",()=>mark("DEPARTURE"));
+$("download").addEventListener("click",exportCSV);$("clear").addEventListener("click",clearAll);render();
+})();
+</script>
+</body>
+</html>
