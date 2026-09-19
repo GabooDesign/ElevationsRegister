@@ -6,7 +6,7 @@ ElevationsRegister es una herramienta web experimental desarrollada para registr
 
 El proyecto está pensado principalmente como una herramienta de exploración y levantamiento de datos para recorridos, permitiendo registrar información temporal, marcar eventos asociados a estaciones y posteriormente exportar los datos para su análisis y visualización.
 
-> ⚠️ **Proyecto experimental:** los datos obtenidos mediante sensores de teléfonos móviles dependen del dispositivo, sistema operativo, calibración, condiciones de uso y calidad de los sensores. Los resultados no deben considerarse mediciones topográficas o ferroviarias de precisión.
+> ⚠️ **Proyecto experimental:** los datos obtenidos mediante sensores de teléfonos móviles dependen del dispositivo, sistema operativo, calibración, condiciones de uso y calidad de los sensores. Los resultados no deben considerarse mediciones topográficas de precisión.
 
 ---
 
