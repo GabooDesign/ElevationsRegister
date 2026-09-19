@@ -33,7 +33,7 @@ input,select{width:100%;background:#101216;border:1px solid #3a3d45;color:#fff;p
 <body>
 <main>
 <h1> Registrador de elevaciones</h1>
-<div class="muted">Captura de elevaciones y inclinación durante un recorrido.</div>
+<div class="muted">Captura automática de inclinación y marca de estaciones durante el recorrido.</div>
 
 <section class="card">
 <div class="status"><span id="dot" class="dot"></span><span id="status">Sensores inactivos</span></div>
@@ -62,17 +62,17 @@ input,select{width:100%;background:#101216;border:1px solid #3a3d45;color:#fff;p
 
 <section id="stationCard" class="card hidden">
 <div class="muted" style="text-align:center">MARCADOR DE ESTACIÓN</div>
-<div id="stationName" class="station">—</div>
-<div id="lastEvent" class="event">El registro automático continúa mientras marcas eventos.</div>
+<div id="stationName" class="station" aria-live="polite">Listo para marcar</div>
+<div id="lastEvent" class="event">Primero marca la llegada a una estación.</div>
 <div class="row">
-<button id="arrive">🚉 Llegué a estación</button>
-<button id="depart">▶ Salí de estación</button>
+<button id="arrive" class="station-action arrive-action">🚉 Llegué a estación</button>
+<button id="depart" class="station-action depart-action" disabled>▶ Salí de estación</button>
 </div>
 </section>
 
 <section class="card">
 <div class="note"><b>Durante el recorrido:</b> tú solo debes preocuparte de que el teléfono permanezca correctamente posicionado. La captura de ángulos ocurre automáticamente. Cuando llegues o salgas de una estación, marcas el evento y continúas.</div>
-<div class="field"><label for="station">Próxima estación / estación actual</label><input id="station" placeholder="Ej. Mirador"></div>
+<div class="field"><label for="station">Nombre de estación (opcional)</label><input id="station" placeholder="Ej. Mirador"></div>
 </section>
 
 <section class="card">
@@ -81,11 +81,9 @@ input,select{width:100%;background:#101216;border:1px solid #3a3d45;color:#fff;p
 </section>
 </main>
 
-<footer class="footer">
-  <span>© 2026 GabooDesign</span>
-  <span>·</span>
-  <span>Registrador de elevaciones de recorridos</span>
-</footer>
+<section class="footer"> 
+  (c) GabooDesign 
+</section>
 
 <script>
 (()=>{"use strict";
@@ -121,30 +119,44 @@ function updateDuration(){
  const ms=recording?performance.now()-startedAt:(records.length?records[records.length-1].elapsedMs:0);
  $("duration").textContent=durationText(ms);
 }
+function updateStationButtons(){
+ const nextType=events.length===0?"ARRIVAL":(events[events.length-1].type==="ARRIVAL"?"DEPARTURE":"ARRIVAL");
+ $("arrive").disabled=!recording||nextType!=="ARRIVAL";
+ $("depart").disabled=!recording||nextType!=="DEPARTURE";
+}
 function render(){
  $("count").textContent=records.length;
  $("segments").textContent=events.filter(e=>e.type==="DEPARTURE").length;
  $("download").disabled=!records.length;
  $("clear").disabled=!records.length;
+ updateStationButtons();
 }
 function start(){
  if(!active||recording)return;
  records=[];events=[];render();recording=true;startedAt=performance.now();
  $("start").disabled=true;$("stop").disabled=false;$("interval").disabled=true;$("filename").disabled=true;
- $("stationCard").classList.remove("hidden");status("RECORRIDO EN CURSO",true);
+ $("stationCard").classList.remove("hidden");updateStationButtons();status("RECORRIDO EN CURSO",true);
  const ms=Math.max(250,Math.min(10000,parseInt($("interval").value,10)||1000));
  const sample=()=>{if(!recording)return;records.push({id:records.length+1,timestampMs:Date.now(),elapsedMs:Math.round(performance.now()-startedAt),longitudinal:pitch,lateral:roll,event:"",station:""});render()};
  sample();timer=setInterval(sample,ms);elapsedTimer=setInterval(updateDuration,100);
 }
 function mark(type){
  if(!recording){alert("Primero inicia el recorrido.");return}
+ const expected=events.length===0?"ARRIVAL":(events[events.length-1].type==="ARRIVAL"?"DEPARTURE":"ARRIVAL");
+ if(type!==expected)return;
  const name=$("station").value.trim()||"Sin nombre";
  const elapsed=Math.round(performance.now()-startedAt);
  const event={id:events.length+1,timestampMs:Date.now(),elapsedMs:elapsed,type,station:name};
  events.push(event);
  records.push({id:records.length+1,timestampMs:event.timestampMs,elapsedMs:elapsed,longitudinal:pitch,lateral:roll,event:type,station:name});
- $("stationName").textContent=name;
- $("lastEvent").textContent=(type==="ARRIVAL"?"Llegada registrada: ":"Salida registrada: ")+name;
+ $("station").value="";
+ if(type==="ARRIVAL"){
+   $("stationName").textContent="Llegada registrada";
+   $("lastEvent").textContent="Ahora marca la salida de la estación.";
+ }else{
+   $("stationName").textContent="Salida registrada";
+   $("lastEvent").textContent="Listo para marcar la llegada de la siguiente estación.";
+ }
  render();
 }
 function stop(){
@@ -152,7 +164,7 @@ function stop(){
  recording=false;clearInterval(timer);clearInterval(elapsedTimer);timer=null;elapsedTimer=null;
  $("start").disabled=false;$("stop").disabled=true;$("interval").disabled=false;$("filename").disabled=false;
  $("recording")?.textContent;
- status("Recorrido detenido",true);updateDuration();
+ updateStationButtons();status("Recorrido detenido",true);updateDuration();
 }
 function exportCSV(){
  if(!records.length)return;
@@ -164,7 +176,7 @@ function exportCSV(){
  a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 function clearAll(){
- if(records.length&&confirm("¿Borrar todo el recorrido?")){records=[];events=[];$("duration").textContent="00:00:00";$("stationName").textContent="—";$("lastEvent").textContent="El registro automático continúa mientras marcas eventos.";render()}
+ if(records.length&&confirm("¿Borrar todo el recorrido?")){records=[];events=[];$("duration").textContent="00:00:00";$("stationName").textContent="Listo para marcar";$("lastEvent").textContent="Primero marca la llegada a una estación.";updateStationButtons();render()}
 }
 $("activate").addEventListener("click",activate);$("calibrate").addEventListener("click",calibrate);
 $("start").addEventListener("click",start);$("stop").addEventListener("click",stop);
